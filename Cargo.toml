@@ -1,0 +1,11 @@
+[package]
+name = "scuttle6"
+version = "0.1.0"
+authors = ["Nick HS <nick@nickhs.com>"]
+
+[dependencies]
+nix = "0.11.0-pre"
+pnet_packet = "0.21"
+
+[patch.crates-io]
+nix = { path = "./nix" }
