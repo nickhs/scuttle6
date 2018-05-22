@@ -3,12 +3,17 @@ extern crate pnet_base;
 extern crate pcap;
 #[macro_use] extern crate log;
 extern crate env_logger;
-extern crate failure;
+#[macro_use] extern crate failure;
+#[macro_use] extern crate structopt;
 
 use std::str::FromStr;
 use std::net::Ipv6Addr;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::fs::File;
 
 use failure::Error;
+use structopt::StructOpt;
 use pnet_base::MacAddr;
 use pnet_packet::icmpv6::*;
 use pnet_packet::ipv6::*;
@@ -20,8 +25,19 @@ use pcap::{Device, Capture, Direction};
 const MAX_PACKET_SIZE: usize = 1024;
 const BPF_FILTER: &'static str = "icmp6";
 
+/// something something
+#[derive(StructOpt, Debug)]
+#[structopt(name = "scuttle6")]
+struct Opt {
+    /// file containing a newline list of IPv6 addresses
+    #[structopt(name = "FILE", parse(from_os_str))]
+    input: PathBuf,
+}
+
 fn main() -> Result<(), Error> {
     env_logger::init();
+    let opt = Opt::from_args();
+    let ips = read_ip_addresses(&opt.input)?;
 
     let device = Device::lookup()?;
     let mut inactive_socket = Capture::from_device(device)?;
@@ -34,8 +50,8 @@ fn main() -> Result<(), Error> {
     info!("socket active, listening");
 
     loop {
-        let packet = sock.next()?;
-        let ethernet_packet = EthernetPacket::new(&packet.data.owned());
+        let packet = sock.next()?.data.to_owned();
+        let ethernet_packet = EthernetPacket::new(&packet);
         if ethernet_packet.is_none() {
             warn!("Couldn't read Ethernet packet??");
             continue;
@@ -65,23 +81,12 @@ fn main() -> Result<(), Error> {
             continue;
         }
 
-        info!("ICMP Echo Request from {:?} hop limit {:?}", ip_packet.get_source(), ip_packet.get_hop_limit());
+        info!("ICMP Echo Request from {:?} hop limit {:?}",
+              ip_packet.get_source(), ip_packet.get_hop_limit());
         debug!("Read ethernet packet {:?}", ethernet_packet);
         debug!("Read IPv6 packet {:?}", ip_packet);
-        debug!("Read ICMP {:?} / type: {:?}", icmp_packet, icmp_packet.get_icmpv6_type());
-
-        let ips = vec![
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:0").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:1").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:2").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:3").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:4").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:5").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:6").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:7").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:8").unwrap(),
-            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:9").unwrap(),
-        ];
+        debug!("Read ICMP {:?} / type: {:?}",
+               icmp_packet, icmp_packet.get_icmpv6_type());
 
         let resp_packet = create_reply(&ips, &ip_packet);
         debug!("Sending resp: {:?}", resp_packet);
@@ -136,7 +141,8 @@ fn create_ip_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
     ipv6_header.set_next_header(IpNextHeaderProtocol(58)); // ICMP
     ipv6_header.set_hop_limit(64);
 
-    let (icmp, source) = match ips.get(prev_packet.get_hop_limit() as usize) {
+    let offset = prev_packet.get_hop_limit() - 1;
+    let (icmp, source) = match ips.get(offset as usize) {
         // send an IP we own
         Some(source) => (create_icmp_time_exceeded(source, prev_packet), source.to_owned()),
         // we've run out of things to say, time to send the echo reply
@@ -177,4 +183,26 @@ fn create_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
     let packet_size = MutableEthernetPacket::minimum_packet_size() + payload.len();
     debug!("Returning {:?}", eth1);
     return Vec::from(&eth1.packet()[0..packet_size]);
+}
+
+fn read_ip_addresses(path: &Path) -> Result<Vec<Ipv6Addr>, Error> {
+    let fh = File::open(path)?;
+    let reader = BufReader::new(&fh);
+    let mut ips = vec![];
+
+    for (idx, line) in reader.lines().enumerate() {
+        match line {
+            Ok(addr) => {
+                match Ipv6Addr::from_str(&addr) {
+                    Ok(ip) => ips.push(ip),
+                    Err(err) => return Err(
+                        format_err!("Failed to parse line {:?}: {:?}", idx, err)),
+                };
+            },
+            Err(err) => return Err(
+                format_err!("Failed to read line {:?}: {:?}", idx, err)),
+        };
+    }
+
+    Ok(ips)
 }
