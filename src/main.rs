@@ -5,26 +5,32 @@ extern crate pcap;
 extern crate env_logger;
 #[macro_use] extern crate failure;
 #[macro_use] extern crate structopt;
+extern crate regex;
+extern crate mac_address;
 
-use std::str::FromStr;
+use std::str::{FromStr, from_utf8};
 use std::net::Ipv6Addr;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::fs::File;
 
 use failure::Error;
-use structopt::StructOpt;
+use mac_address::mac_address_by_name;
+use pcap::{Device, Capture, Direction};
 use pnet_base::MacAddr;
 use pnet_packet::icmpv6::*;
 use pnet_packet::ipv6::*;
 use pnet_packet::ethernet::*;
 use pnet_packet::ip::IpNextHeaderProtocol;
 use pnet_packet::Packet;
-use pcap::{Device, Capture, Direction};
+use regex::Regex;
+use structopt::StructOpt;
 
 const MAX_PACKET_SIZE: usize = 1024;
 const BPF_FILTER: &'static str = "icmp6";
 
+// FIXME(nickhs): add help description
 /// something something
 #[derive(StructOpt, Debug)]
 #[structopt(name = "scuttle6")]
@@ -34,12 +40,19 @@ struct Opt {
     input: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct MacAddreses {
+    me: MacAddr,
+    gateway: MacAddr,
+}
+
 fn main() -> Result<(), Error> {
     env_logger::init();
     let opt = Opt::from_args();
     let ips = read_ip_addresses(&opt.input)?;
 
     let device = Device::lookup()?;
+    let mac_addrs = get_mac_addrs(&device.name)?;
     let mut inactive_socket = Capture::from_device(device)?;
     inactive_socket = inactive_socket
                         .snaplen(MAX_PACKET_SIZE as i32);
@@ -88,7 +101,7 @@ fn main() -> Result<(), Error> {
         debug!("Read ICMP {:?} / type: {:?}",
                icmp_packet, icmp_packet.get_icmpv6_type());
 
-        let resp_packet = create_reply(&ips, &ip_packet);
+        let resp_packet = create_reply(&ips, &ip_packet, &mac_addrs);
         debug!("Sending resp: {:?}", resp_packet);
 
         sock.sendpacket(resp_packet).unwrap();
@@ -152,7 +165,7 @@ fn create_ip_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
     ipv6_header.set_source(source);
 
     let icmp_packet_size = icmp.len();
-    ipv6_header.set_payload_length(icmp_packet_size as u16); // FIXME(nickhs): is this safe
+    ipv6_header.set_payload_length(icmp_packet_size as u16);
     ipv6_header.set_payload(&icmp);
 
     let packet_size = MutableIpv6Packet::minimum_packet_size() + icmp_packet_size;
@@ -160,22 +173,19 @@ fn create_ip_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
     return Vec::from(&ipv6_header.packet()[0..packet_size]);
 }
 
-fn make_ethernet<'b>() -> MutableEthernetPacket<'b> {
+fn make_ethernet<'b>(mac_addrs: &MacAddreses) -> MutableEthernetPacket<'b> {
     let buf = [0u8; MAX_PACKET_SIZE];
     let mut ethernet_reply = MutableEthernetPacket::owned(buf.to_vec()).unwrap();
 
-    // 00:60:dd:46:62:3d
-    ethernet_reply.set_destination(MacAddr::new(0, 96, 221, 70, 98, 61));
-
-    // aa:00:00:76:0d:28
-    ethernet_reply.set_source(MacAddr::new(170, 0, 0, 118, 13, 40));
+    ethernet_reply.set_destination(mac_addrs.gateway);
+    ethernet_reply.set_source(mac_addrs.me);
 
     ethernet_reply.set_ethertype(EtherTypes::Ipv6);
     ethernet_reply
 }
 
-fn create_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
-    let mut eth1 = make_ethernet();
+fn create_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet, mac_addrs: &MacAddreses) -> Vec<u8> {
+    let mut eth1 = make_ethernet(mac_addrs);
 
     let payload = create_ip_reply(ips, prev_packet);
     eth1.set_payload(&payload);
@@ -205,4 +215,26 @@ fn read_ip_addresses(path: &Path) -> Result<Vec<Ipv6Addr>, Error> {
     }
 
     Ok(ips)
+}
+
+fn get_mac_addrs(name: &str) -> Result<MacAddreses, Error> {
+    let me = mac_address_by_name(name)?
+        .expect("could not find mac address?")
+        .bytes();
+    let me = MacAddr::new(me[0], me[1], me[2], me[3], me[4], me[5]);
+    let result = Command::new("arp").arg("-i").arg(name).output()?.stdout;
+    let result = from_utf8(&result)?;
+    let regex = Regex::new(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}")?;
+    let gateway = match regex.find(result) {
+        None => return Err(format_err!(
+                "Could not understand output from arp command:\n{:?}", result)),
+        Some(m) => &result[m.start()..m.end()],
+    };
+
+    let gateway = MacAddr::from_str(gateway).unwrap();
+
+    Ok(MacAddreses{
+        me,
+        gateway,
+    })
 }
