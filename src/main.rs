@@ -1,148 +1,180 @@
-extern crate nix;
 extern crate pnet_packet;
+extern crate pnet_base;
+extern crate pcap;
+#[macro_use] extern crate log;
+extern crate env_logger;
+extern crate failure;
 
-use nix::sys::socket::*;
-use nix::Error;
-use nix::sys::select::*;
-use std::os::unix::io::RawFd;
+use std::str::FromStr;
+use std::net::Ipv6Addr;
+
+use failure::Error;
+use pnet_base::MacAddr;
 use pnet_packet::icmpv6::*;
 use pnet_packet::ipv6::*;
+use pnet_packet::ethernet::*;
 use pnet_packet::ip::IpNextHeaderProtocol;
-use std::net::Ipv6Addr;
 use pnet_packet::Packet;
-use std::thread;
-use std::time;
-use nix::sys::uio::IoVec;
+use pcap::{Device, Capture, Direction};
 
-const MAX_PACKET_SIZE: usize = 65535;
-const SOME_CRAP: [u8; 40] = [1; 40];
+const MAX_PACKET_SIZE: usize = 1024;
+const BPF_FILTER: &'static str = "icmp6";
 
 fn main() -> Result<(), Error> {
-    let mut sockets = vec![];
-    let icmp_socket = socket(AddressFamily::Inet6, SockType::Raw, SockFlag::empty(), SockProtocol::Icmpv6)?;
-    setsockopt(icmp_socket, sockopt::RecvPktInfo, &true)?;
-    sockets.push(icmp_socket);
+    env_logger::init();
 
-    println!("we running...");
+    let device = Device::lookup()?;
+    let mut inactive_socket = Capture::from_device(device)?;
+    inactive_socket = inactive_socket
+                        .snaplen(MAX_PACKET_SIZE as i32);
+    let mut sock = inactive_socket.open()?;
+    sock.filter(BPF_FILTER)?;
+    sock.direction(Direction::In)?;
+
+    info!("socket active, listening");
+
     loop {
-        let sockets = sockets.clone();
-        let mut fd_set = create_fd_set(&sockets);
-        println!("waiting for a packet...");
-        select(None, Some(&mut fd_set), None, None, None)?;
-        for fd in parse_fd_set(sockets, fd_set).into_iter() {
-            let mut buf = [0; MAX_PACKET_SIZE];
-            let (read_size, sock_addr) = recvfrom(fd, &mut buf)?;
-
-            let ip_packet = Ipv6Packet::new(&buf[0..read_size]);
-            println!("Read IPv6 packet {:?}", ip_packet);
-
-            let icmp_packet = Icmpv6Packet::new(&buf[0..read_size]);
-            if icmp_packet.is_none() {
-                continue;
-            }
-
-            let icmp_packet = icmp_packet.unwrap();
-
-            println!("Read ICMP {:?} from {:?}: {:?}", icmp_packet, sock_addr, icmp_packet.payload());
-
-            if icmp_packet.get_icmpv6_type() != Icmpv6Types::EchoRequest {
-                continue;
-            }
-
+        let packet = sock.next()?;
+        let ethernet_packet = EthernetPacket::new(&packet.data.owned());
+        if ethernet_packet.is_none() {
+            warn!("Couldn't read Ethernet packet??");
             continue;
-
-            let resp_packet = create_reply(convert(&(sock_addr.clone())), &icmp_packet);
-            println!("reps packet is {:?}", resp_packet);
-            // sendto(fd, &resp_packet, &dest, MsgFlags::empty())?;
-            // wat(fd, &resp_packet, &sock_addr)?;
-            repro(icmp_socket, &sock_addr, &icmp_packet)?;
         }
+
+        let ethernet_packet = ethernet_packet.unwrap();
+
+        let ip_packet = Ipv6Packet::new(&ethernet_packet.payload());
+        if ip_packet.is_none() {
+            warn!("Couldn't read IP packet??");
+            warn!("Found ethernet packet {:?}", ethernet_packet);
+            continue;
+        }
+
+        let ip_packet = ip_packet.unwrap();
+
+        let icmp_packet = Icmpv6Packet::new(&ip_packet.payload());
+        if icmp_packet.is_none() {
+            warn!("Couldn't read ICMP packet??");
+            warn!("Found IPv6 packet {:?}", ip_packet);
+            continue;
+        }
+
+        let icmp_packet = icmp_packet.unwrap();
+
+        if icmp_packet.get_icmpv6_type() != Icmpv6Types::EchoRequest {
+            continue;
+        }
+
+        info!("ICMP Echo Request from {:?} hop limit {:?}", ip_packet.get_source(), ip_packet.get_hop_limit());
+        debug!("Read ethernet packet {:?}", ethernet_packet);
+        debug!("Read IPv6 packet {:?}", ip_packet);
+        debug!("Read ICMP {:?} / type: {:?}", icmp_packet, icmp_packet.get_icmpv6_type());
+
+        let ips = vec![
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:0").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:1").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:2").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:3").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:4").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:5").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:6").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:7").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:8").unwrap(),
+            Ipv6Addr::from_str("2605:2700:1:1019:0:0:0:9").unwrap(),
+        ];
+
+        let resp_packet = create_reply(&ips, &ip_packet);
+        debug!("Sending resp: {:?}", resp_packet);
+
+        sock.sendpacket(resp_packet).unwrap();
     }
 }
 
-fn wat(fd: i32, resp_packet: &[u8], dest: &SockAddr) -> Result<(), Error> {
-    sendto(fd, &resp_packet, &dest, MsgFlags::empty())?;
-    return Ok(());
-}
-
-fn repro(sock: RawFd, dest: &SockAddr, prev_packet: &Icmpv6Packet) -> Result<(), Error> {
-    // let dest = SockAddr::new_inet(InetAddr::new(IpAddr::new_v4(127, 0, 0, 1), 8000));
-    /*
-    let dest = SockAddr::new_inet(InetAddr::new(IpAddr::new_v6(u16::from_str_radix("2605", 16).unwrap(),
-                                                               u16::from_str_radix("2700", 16).unwrap(),
-                                                               u16::from_str_radix("0", 16).unwrap(),
-                                                               u16::from_str_radix("3", 16).unwrap(),
-                                                               u16::from_str_radix("a800", 16).unwrap(),
-                                                               u16::from_str_radix("ff", 16).unwrap(),
-                                                               u16::from_str_radix("fe76", 16).unwrap(),
-                                                               u16::from_str_radix("d28", 16).unwrap()), 0));
-    */
-
-    let source = Ipv6Addr::new(123, 123, 123, 123, 123, 123, 123, 1);
-    let resp_packet = create_icmp_reply(&convert(&dest), &source, prev_packet);
-    println!("resp packet is {:?}", resp_packet);
-    // sendto(sock, &resp_packet, &dest, MsgFlags::empty())?;
-    sendmsg(sock, &vec![IoVec::from_slice(&resp_packet)], &vec![], MsgFlags::empty(), Some(&dest))?;
-    return Ok(());
-}
-
-fn create_fd_set(sockets: &Vec<RawFd>) -> FdSet {
-    let mut fd_set = FdSet::new();
-    for socket in sockets.into_iter() {
-        fd_set.insert(*socket);
-    }
-
-    fd_set
-}
-
-fn parse_fd_set(sockets: Vec<RawFd>, mut fd_set: FdSet) -> Vec<RawFd> {
-    sockets.into_iter().filter(|x| fd_set.contains(*x)).collect()
-}
-
-fn create_icmp_reply(target: &Ipv6Addr, source: &Ipv6Addr, prev_packet: &Icmpv6Packet) -> Vec<u8> {
+fn create_icmp_time_exceeded(source: &Ipv6Addr, prev_packet: &Ipv6Packet) -> Vec<u8> {
     let mut icmp_buf = [0u8; MAX_PACKET_SIZE - 40]; // 40 comes from the IPv6 header size
     let mut icmp = MutableIcmpv6Packet::new(&mut icmp_buf).unwrap();
-    icmp.set_icmpv6_type(Icmpv6Types::EchoReply);
+    icmp.set_icmpv6_type(Icmpv6Types::TimeExceeded);
     icmp.set_icmpv6_code(Icmpv6Code::new(0));
-    let payload = prev_packet.payload().clone(); // FIXME(nickhs): check size
-    icmp.set_payload(payload);
+
+    let mut payload = vec![];
+    // blank area
+    payload.extend_from_slice(&[0; 4]);
+    // prev packet
+    payload.extend_from_slice(&prev_packet.packet()[0..(40 + 8 + 8)]);
+
+    icmp.set_payload(&payload);
     let icmp_packet_size = payload.len() + MutableIcmpv6Packet::minimum_packet_size();
 
-    // calculate the checksum
-    let just_bloody_copy_it = Icmpv6Packet::owned(icmp.packet().clone().to_vec()).unwrap();
-    icmp.set_checksum(checksum(&just_bloody_copy_it, &source, &target));
+    let just_bloody_copy_it = Icmpv6Packet::owned(icmp.packet()[0..icmp_packet_size].to_owned()).unwrap();
+    icmp.set_checksum(checksum(&just_bloody_copy_it, source, &prev_packet.get_source()));
 
     Vec::from(&icmp.packet()[0..icmp_packet_size])
 }
 
-fn create_reply(target: Ipv6Addr, prev_packet: &Icmpv6Packet) -> Vec<u8> {
+fn create_icmp_echo_reply(prev_packet: &Ipv6Packet) -> Vec<u8> {
+    let mut icmp_buf = [0u8; MAX_PACKET_SIZE - 40]; // 40 comes from the IPv6 header size
+    let mut icmp = MutableIcmpv6Packet::new(&mut icmp_buf).unwrap();
+    icmp.set_icmpv6_type(Icmpv6Types::EchoReply);
+    icmp.set_icmpv6_code(Icmpv6Code::new(0));
+
+    let payload = &prev_packet.payload()[4..16];
+    icmp.set_payload(&payload);
+    let icmp_packet_size = payload.len() + MutableIcmpv6Packet::minimum_packet_size();
+
+    let just_bloody_copy_it = Icmpv6Packet::owned(icmp.packet()[0..icmp_packet_size].to_owned()).unwrap();
+    icmp.set_checksum(checksum(&just_bloody_copy_it, &prev_packet.get_destination(), &prev_packet.get_source()));
+
+    Vec::from(&icmp.packet()[0..icmp_packet_size])
+}
+
+fn create_ip_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
     let mut buf = [0u8; MAX_PACKET_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut buf).unwrap();
-    let source = Ipv6Addr::new(123, 123, 123, 123, 123, 123, 123, 1);
+
+    ipv6_header.set_destination(prev_packet.get_source());
+    ipv6_header.set_version(6 as u8);
+    ipv6_header.set_next_header(IpNextHeaderProtocol(58)); // ICMP
+    ipv6_header.set_hop_limit(64);
+
+    let (icmp, source) = match ips.get(prev_packet.get_hop_limit() as usize) {
+        // send an IP we own
+        Some(source) => (create_icmp_time_exceeded(source, prev_packet), source.to_owned()),
+        // we've run out of things to say, time to send the echo reply
+        None => (create_icmp_echo_reply(prev_packet), prev_packet.get_destination()),
+    };
 
     ipv6_header.set_source(source);
-    ipv6_header.set_destination(target);
 
-    let icmp = create_icmp_reply(&target, &source, prev_packet);
     let icmp_packet_size = icmp.len();
     ipv6_header.set_payload_length(icmp_packet_size as u16); // FIXME(nickhs): is this safe
     ipv6_header.set_payload(&icmp);
 
-    ipv6_header.set_version(6 as u8);
-    ipv6_header.set_next_header(IpNextHeaderProtocol(1)); // ICMP
-    ipv6_header.set_hop_limit(33);
-
     let packet_size = MutableIpv6Packet::minimum_packet_size() + icmp_packet_size;
-    println!("Returning {:?} / {:?}", ipv6_header, icmp);
+    debug!("Returning {:?} / {:?}", ipv6_header, icmp);
     return Vec::from(&ipv6_header.packet()[0..packet_size]);
 }
 
-fn convert(sock_addr: &SockAddr) -> Ipv6Addr {
-    match sock_addr {
-        SockAddr::Inet(InetAddr::V6(x)) => Ipv6Addr::from(x.sin6_addr.s6_addr),
-        SockAddr::Inet(_) => panic!("Don't know how to handle type"),
-        SockAddr::Unix(_) => panic!("Don't know how to handle type"),
-        SockAddr::Link(_) => panic!("Don't know how to handle type"),
-        SockAddr::Netlink(_) => panic!("Don't know how to handle type"),
-    }
+fn make_ethernet<'b>() -> MutableEthernetPacket<'b> {
+    let buf = [0u8; MAX_PACKET_SIZE];
+    let mut ethernet_reply = MutableEthernetPacket::owned(buf.to_vec()).unwrap();
+
+    // 00:60:dd:46:62:3d
+    ethernet_reply.set_destination(MacAddr::new(0, 96, 221, 70, 98, 61));
+
+    // aa:00:00:76:0d:28
+    ethernet_reply.set_source(MacAddr::new(170, 0, 0, 118, 13, 40));
+
+    ethernet_reply.set_ethertype(EtherTypes::Ipv6);
+    ethernet_reply
+}
+
+fn create_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
+    let mut eth1 = make_ethernet();
+
+    let payload = create_ip_reply(ips, prev_packet);
+    eth1.set_payload(&payload);
+
+    let packet_size = MutableEthernetPacket::minimum_packet_size() + payload.len();
+    debug!("Returning {:?}", eth1);
+    return Vec::from(&eth1.packet()[0..packet_size]);
 }

@@ -4,8 +4,9 @@ version = "0.1.0"
 authors = ["Nick HS <nick@nickhs.com>"]
 
 [dependencies]
-nix = "0.11.0-pre"
 pnet_packet = "0.21"
-
-[patch.crates-io]
-nix = { path = "./nix" }
+pnet_base = "0.21"
+pcap = "0.7"
+log = "0.4"
+env_logger = "0.5"
+failure = "0.1"
