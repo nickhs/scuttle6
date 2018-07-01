@@ -8,6 +8,7 @@ extern crate env_logger;
 extern crate regex;
 extern crate mac_address;
 
+use std::cmp::min;
 use std::str::{FromStr, from_utf8};
 use std::net::Ipv6Addr;
 use std::io::{BufRead, BufReader};
@@ -118,7 +119,8 @@ fn create_icmp_time_exceeded(source: &Ipv6Addr, prev_packet: &Ipv6Packet) -> Vec
     // blank area
     payload.extend_from_slice(&[0; 4]);
     // prev packet
-    payload.extend_from_slice(&prev_packet.packet()[0..(40 + 8 + 8)]);
+    let prev_packet_len = min(40 + 8 + 8, prev_packet.packet().len());
+    payload.extend_from_slice(&prev_packet.packet()[0..prev_packet_len]);
 
     icmp.set_payload(&payload);
     let icmp_packet_size = payload.len() + MutableIcmpv6Packet::minimum_packet_size();
