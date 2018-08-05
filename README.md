@@ -30,14 +30,15 @@ reaches it's destination (or gives up). Each line in the traceroute output
 represents a packet with an increasing hop limit.
 
 When a router receives a packet, it checks what the hop limit is set to on the
-packet. If it's zero it returns an ICMP Time Exceeded message back, notifying
-the sender that it's not forwarding the packet onwards. If it's greater than
-zero, it subtracts one from the hop limit and forwards it on to where it
-believes the packet needs to go. This was designed to idenify loops in router's
-routing tables.
+packet. If it's zero it returns an [ICMP Time
+Exceeded](https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol#Time_exceeded)
+message back, notifying the sender that it's not forwarding the packet onwards.
+If it's greater than zero, it subtracts one from the hop limit and forwards it
+on to where it believes the packet needs to go. The mechanism exists to
+identify loops in router's routing tables.
 
 Traceroute takes these Time Exceeded messages, and then displays the IP address
-of the router that sent them. By starting at a low hop limit, traceroute can
+of the router that sent them. By starting at a hop limit of one, traceroute can
 show every server on the way (that sends back a Time Exceeded message). It
 can then do a reverse DNS lookup to display the hostname of the machine sending the
 Time Exceeded message, rather than just the IP address.
@@ -72,8 +73,8 @@ lookup for the spoofed IP allowing you to render whatever hostname you'd like.
 
 * Disable ICMP6 responses from the kernel with these two iptables rules:
 
-    $ ip6tables -A OUTPUT -p ipv6-icmp -m owner --uid-owner 0 -j ACCEPT
-    $ ip6tables -A OUTPUT -p ipv6-icmp -m icmp6 --icmpv6-type 129 -j DROP
+      $ ip6tables -A OUTPUT -p ipv6-icmp -m owner --uid-owner 0 -j ACCEPT
+      $ ip6tables -A OUTPUT -p ipv6-icmp -m icmp6 --icmpv6-type 129 -j DROP
 
 The first rule allows ICMP6 traffic from UID zero (root), if you're running your application under a different UID change it accordingly.
 The second rule drops all other outgoing ICMP6 type 129 (Echo Reply) messages from the host.
@@ -84,17 +85,17 @@ The second rule drops all other outgoing ICMP6 type 129 (Echo Reply) messages fr
 
 * Run the binary
 
-    $ scuttle6 ips.txt
+      $ scuttle6 ips.txt
 
 * Try it out! From another machine (the client) traceroute to your host (the server).
 
     On Mac OS:
 
-        $ traceroute6 -I <your host>
+      $ traceroute6 -I <your host>
 
     On Linux:
 
-        $ traceroute -6 -I <your host>
+      $ traceroute -6 -I <your host>
 
 Your client machine will need to support IPv6. I use
 [test-ipv6.com](https://test-ipv6.com/) or
@@ -135,5 +136,8 @@ there it's a:
 - Only supports ICMPv6, not TCP or UDP. Mainly because I don't want to break
   the either two on my shared host.
 
-[talk](https://www.youtube.com/watch?v=NgKI7-3j2h)
-[latest-release](http://example.net)
+[talk]: https://www.youtube.com/watch?v=NgKI7-3j2h
+[latest-release]: http://example.net
+[env_logger]: https://docs.rs/env_logger/*/env_logger/
+[he-script]: https://github.com/nickhs/scuttle6/blob/master/scripts/update_he_dns.py
+[example-ips]: https://github.com/nickhs/scuttle6/blob/master/scripts/ips.txt
