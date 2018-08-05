@@ -4,7 +4,7 @@ Convince `traceroute6` to resolve to arbitrary reverse DNS records.
 
 [![asciicast](https://asciinema.org/a/8Z6p6voftOV9IVXdBDwZvMRA2.png)](https://asciinema.org/a/8Z6p6voftOV9IVXdBDwZvMRA2)
 
-Inspired from [Karla Burnett's amazing talk at Bang Bang Con 2018][talk]
+Inspired from [Karla Burnett's amazing talk at Bang Bang Con 2018][talk].
 
 ## Connect to tracefun.nickhs.com
 
@@ -12,11 +12,11 @@ Inspired from [Karla Burnett's amazing talk at Bang Bang Con 2018][talk]
 
     On Mac OS:
 
-        $ traceroute6 -I tracefun.nickhs.com
+      $ traceroute6 -I tracefun.nickhs.com
 
     On Linux:
 
-        $ traceroute -6 -I tracefun.nickhs.com
+      $ traceroute -6 -I tracefun.nickhs.com
 
 Your machine will need to support IPv6. I use
 [test-ipv6.com](https://test-ipv6.com/) or
@@ -76,12 +76,12 @@ lookup for the spoofed IP allowing you to render whatever hostname you'd like.
       $ ip6tables -A OUTPUT -p ipv6-icmp -m owner --uid-owner 0 -j ACCEPT
       $ ip6tables -A OUTPUT -p ipv6-icmp -m icmp6 --icmpv6-type 129 -j DROP
 
-The first rule allows ICMP6 traffic from UID zero (root), if you're running your application under a different UID change it accordingly.
-The second rule drops all other outgoing ICMP6 type 129 (Echo Reply) messages from the host.
+    The first rule allows ICMP6 traffic from UID zero (root), if you're running your application under a different UID change it accordingly.
+    The second rule drops all other outgoing ICMP6 type 129 (Echo Reply) messages from the host.
 
 * Download the [latest release][latest-release] onto your host.
 
-* Create a newline delimited file with the IPv6 IP's to return. See [the example in the docs][example-ips].
+* Create a newline delimited file with the IPv6 IPs to return. See [the example in the docs][example-ips].
 
 * Run the binary
 
@@ -97,12 +97,12 @@ The second rule drops all other outgoing ICMP6 type 129 (Echo Reply) messages fr
 
       $ traceroute -6 -I <your host>
 
-Your client machine will need to support IPv6. I use
-[test-ipv6.com](https://test-ipv6.com/) or
-[ipv6.google.com](https://ipv6.google.com/) to check.
+    Your client machine will need to support IPv6. I use
+    [test-ipv6.com](https://test-ipv6.com/) or
+    [ipv6.google.com](https://ipv6.google.com/) to check.
 
-If it works you should see the the IPs defined in `ips.txt` being returned in
-consecutive order.
+    If it works you should see the the IPs defined in `ips.txt` being returned in
+    consecutive order.
 
 * Setup your reverse DNS records. This will map the IPs to a DNS name, allowing
   you to send messages. How to setup those reverse DNS records is dependent on
