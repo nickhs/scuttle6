@@ -136,7 +136,7 @@ there it's a:
 - Only supports ICMPv6, not TCP or UDP. Mainly because I don't want to break
   the either two on my shared host.
 
-[talk]: https://www.youtube.com/watch?v=NgKI7-3j2h
+[talk]: https://www.youtube.com/watch?v=NgKI7-3j2hc
 [latest-release]: http://example.net
 [env_logger]: https://docs.rs/env_logger/*/env_logger/
 [he-script]: https://github.com/nickhs/scuttle6/blob/master/scripts/update_he_dns.py
