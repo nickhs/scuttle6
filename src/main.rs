@@ -125,13 +125,14 @@ fn create_icmp_time_exceeded(source: &Ipv6Addr, prev_packet: &Ipv6Packet) -> Vec
     icmp.set_payload(&payload);
     let icmp_packet_size = payload.len() + MutableIcmpv6Packet::minimum_packet_size();
 
+    // FIXME(nickhs): there has to be a better way to do this
     let just_bloody_copy_it = Icmpv6Packet::owned(icmp.packet()[0..icmp_packet_size].to_owned()).unwrap();
     icmp.set_checksum(checksum(&just_bloody_copy_it, source, &prev_packet.get_source()));
 
     Vec::from(&icmp.packet()[0..icmp_packet_size])
 }
 
-fn create_icmp_echo_reply(prev_packet: &Ipv6Packet) -> Vec<u8> {
+fn create_icmp_echo_reply(source: &Ipv6Addr, prev_packet: &Ipv6Packet) -> Vec<u8> {
     let mut icmp_buf = [0u8; MAX_PACKET_SIZE - 40]; // 40 comes from the IPv6 header size
     let mut icmp = MutableIcmpv6Packet::new(&mut icmp_buf).unwrap();
     icmp.set_icmpv6_type(Icmpv6Types::EchoReply);
@@ -142,7 +143,7 @@ fn create_icmp_echo_reply(prev_packet: &Ipv6Packet) -> Vec<u8> {
     let icmp_packet_size = payload.len() + MutableIcmpv6Packet::minimum_packet_size();
 
     let just_bloody_copy_it = Icmpv6Packet::owned(icmp.packet()[0..icmp_packet_size].to_owned()).unwrap();
-    icmp.set_checksum(checksum(&just_bloody_copy_it, &prev_packet.get_destination(), &prev_packet.get_source()));
+    icmp.set_checksum(checksum(&just_bloody_copy_it, source, &prev_packet.get_source()));
 
     Vec::from(&icmp.packet()[0..icmp_packet_size])
 }
@@ -156,12 +157,20 @@ fn create_ip_reply(ips: &[Ipv6Addr], prev_packet: &Ipv6Packet) -> Vec<u8> {
     ipv6_header.set_next_header(IpNextHeaderProtocol(58)); // ICMP
     ipv6_header.set_hop_limit(64);
 
-    let offset = prev_packet.get_hop_limit() - 1;
-    let (icmp, source) = match ips.get(offset as usize) {
-        // send an IP we own
-        Some(source) => (create_icmp_time_exceeded(source, prev_packet), source.to_owned()),
-        // we've run out of things to say, time to send the echo reply
-        None => (create_icmp_echo_reply(prev_packet), prev_packet.get_destination()),
+    let offset = (prev_packet.get_hop_limit() - 1) as usize;
+    let is_last = ips.len() - 1 == offset;
+    let (icmp, source) = match (ips.get(offset), is_last) {
+        // we have a an IP to send and it's not the last IP we have
+        // send an IP we own, but send it as a time exceeded
+        (Some(source), false) => (create_icmp_time_exceeded(source, prev_packet), source.to_owned()),
+
+        // we have a an IP to send but it is the last IP we have
+        // send an IP we own, but send it as an echo reply to terminate remote traceroute
+        (Some(source), true) => (create_icmp_echo_reply(source, prev_packet), source.to_owned()),
+
+        // we've run out of things to say, normally shouldn't get here?
+        // send a normal echo reply
+        (None, _) => (create_icmp_echo_reply(&prev_packet.get_destination(), prev_packet), prev_packet.get_destination()),
     };
 
     ipv6_header.set_source(source);
