@@ -31,13 +31,15 @@ use structopt::StructOpt;
 const MAX_PACKET_SIZE: usize = 1024;
 const BPF_FILTER: &'static str = "icmp6";
 
-// FIXME(nickhs): add help description
-/// something something
+/// Convince traceroute6 to resolve to arbitrary reverse DNS records.
+///
+/// Works by spoofing source addresses of returned ICMP time exceeded
+/// packets. For more refer to the documentation on Github.
 #[derive(StructOpt, Debug)]
 #[structopt(name = "scuttle6")]
 struct Opt {
-    /// file containing a newline list of IPv6 addresses
-    #[structopt(name = "FILE", parse(from_os_str))]
+    /// file containing a newline delimited list of IPv6 addresses
+    #[structopt(name = "IPS", parse(from_os_str))]
     input: PathBuf,
 }
 
