@@ -137,7 +137,7 @@ there it's a:
   the either two on my shared host.
 
 [talk]: https://www.youtube.com/watch?v=NgKI7-3j2hc
-[latest-release]: http://example.net
+[latest-release]: https://github.com/nickhs/scuttle6/releases
 [env_logger]: https://docs.rs/env_logger/*/env_logger/
 [he-script]: https://github.com/nickhs/scuttle6/blob/master/scripts/update_he_dns.py
 [example-ips]: https://github.com/nickhs/scuttle6/blob/master/scripts/ips.txt
