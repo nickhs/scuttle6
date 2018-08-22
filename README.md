@@ -25,41 +25,47 @@ Your machine will need to support IPv6. I use
 ## How it works
 
 `traceroute6` works by sending a series of packets (could be ICMP, UDP or TCP)
-with a hop limit starting at one; and then increasing it by one until it
-reaches it's destination (or gives up). Each line in the traceroute output
-represents a packet with an increasing hop limit.
+with a hop limit starting at one; and then increasing the hop limit by one
+until the packet reaches its destination (or gives up). Each line in the
+traceroute output represents a packet with an increasing hop limit.
 
 When a router receives a packet, it checks what the hop limit is set to on the
-packet. If it's zero it returns an [ICMP Time
+packet. If the hop limit is zero the router returns an [ICMP Time
 Exceeded](https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol#Time_exceeded)
-message back, notifying the sender that it's not forwarding the packet onwards.
-If it's greater than zero, it subtracts one from the hop limit and forwards it
-on to where it believes the packet needs to go. The mechanism exists to
-identify loops in router's routing tables.
+message back, notifying the sender that it is not forwarding the packet
+onwards.  If the hop limit is greater than zero, the router subtracts one from
+the hop limit and forwards it on to where the router believes the packet needs
+to go.  This mechanism exists to identify loops in router's routing tables.
 
-Traceroute takes these Time Exceeded messages, and then displays the IP address
+Traceroute takes these Time Exceeded messages and then displays the IP address
 of the router that sent them. By starting at a hop limit of one, traceroute can
 show every server on the way (that sends back a Time Exceeded message). It
 can then do a reverse DNS lookup to display the hostname of the machine sending the
 Time Exceeded message, rather than just the IP address.
 
-`scuttle6` works by pretending to be a router. When it receives an ICMP packet
-(see Limitations below) it matches up the hop limit to an IP that was provided
-to it. It sends back a Time Exceeded message to `traceroute6` _but_ spoofs the
-source IP address in the returning packat as defined by the IP addresses fed to
-it.
+`scuttle6` works by pretending to be a router. When `scuttle6` receives an ICMP
+packet (see Limitations below) it matches the packet's hop limit to an IP that
+was provided to it. It then sends back a Time Exceeded message to `traceroute6`
+_but_ spoofs the source IP address in the returning packet to the IP address
+that was provided to it.
 
-`traceroute6` will get the spoofed IP and believe the packet flowed through
-that router before getting to its destination. It'll perform a reverse DNS
-lookup for the spoofed IP allowing you to render whatever hostname you'd like.
+`traceroute6` will get the spoofed IP and believe the packet flowed through the
+spoofed IP before getting to its destination. It will then perform a reverse
+DNS lookup for the spoofed IP allowing you to render whatever hostname you
+would like.
+
+In short you provide `scuttle6` with a list of IP addresses who's reverse DNS
+records can match up to whatever arbitrary domain name you would like.
+`scuttle6` returns a different, spoofed, IP address depending on the hop limit
+it gets from `traceroute`.
 
 ## Setup your own server
 
 ### What you will need to have
 
 * You will need to find a host that supports:
-    * IPv6 and gives you plenty of IPv6 addresses.
-    * modifying iptables rules to block outgoing ICMP responses
+    * IPv6 and gives you plenty of IPv6 addresses
+    * modifying iptables rules to block the servers usual ICMP responses
     * `CAP_NET_RAW` to allow crafting and returning raw packets
 
   I personally use [prgmr.com](https://prgmr.com). Note you'll have to ask
