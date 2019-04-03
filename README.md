@@ -2,7 +2,7 @@
 
 Convince `traceroute6` to resolve to arbitrary reverse DNS records.
 
-[![asciicast](https://asciinema.org/a/8Z6p6voftOV9IVXdBDwZvMRA2.png)](https://asciinema.org/a/8Z6p6voftOV9IVXdBDwZvMRA2)
+[![asciicast](https://asciinema.org/a/238512.svg)](https://asciinema.org/a/238512)
 
 Inspired from [Karla Burnett's amazing talk at Bang Bang Con 2018][talk].
 
