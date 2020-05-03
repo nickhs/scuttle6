@@ -4,7 +4,7 @@ extern crate pcap;
 #[macro_use] extern crate log;
 extern crate env_logger;
 #[macro_use] extern crate failure;
-#[macro_use] extern crate structopt;
+extern crate structopt;
 extern crate regex;
 extern crate mac_address;
 
@@ -127,10 +127,7 @@ fn create_icmp_time_exceeded(source: &Ipv6Addr, prev_packet: &Ipv6Packet) -> Vec
     icmp.set_payload(&payload);
     let icmp_packet_size = payload.len() + MutableIcmpv6Packet::minimum_packet_size();
 
-    // FIXME(nickhs): there has to be a better way to do this
-    let just_bloody_copy_it = Icmpv6Packet::owned(icmp.packet()[0..icmp_packet_size].to_owned()).unwrap();
-    icmp.set_checksum(checksum(&just_bloody_copy_it, source, &prev_packet.get_source()));
-
+    icmp.set_checksum(checksum(&icmp.to_immutable(), source, &prev_packet.get_source()));
     Vec::from(&icmp.packet()[0..icmp_packet_size])
 }
 
@@ -144,9 +141,7 @@ fn create_icmp_echo_reply(source: &Ipv6Addr, prev_packet: &Ipv6Packet) -> Vec<u8
     icmp.set_payload(&payload);
     let icmp_packet_size = payload.len() + MutableIcmpv6Packet::minimum_packet_size();
 
-    let just_bloody_copy_it = Icmpv6Packet::owned(icmp.packet()[0..icmp_packet_size].to_owned()).unwrap();
-    icmp.set_checksum(checksum(&just_bloody_copy_it, source, &prev_packet.get_source()));
-
+    icmp.set_checksum(checksum(&icmp.to_immutable(), source, &prev_packet.get_source()));
     Vec::from(&icmp.packet()[0..icmp_packet_size])
 }
 
