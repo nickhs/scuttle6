@@ -6,7 +6,7 @@ Convince `traceroute6` to resolve to arbitrary reverse DNS records.
 
 Inspired from [Karla Burnett's amazing talk at Bang Bang Con 2018][talk].
 
-## Connect to tracefun.nickhs.com
+## Connect to tracefun.nickhs.com (no longer up)
 
 * Try it out!
 
@@ -32,32 +32,34 @@ traceroute output represents a packet with an increasing hop limit.
 When a router receives a packet, it checks what the hop limit is set to on the
 packet. If the hop limit is zero the router returns an [ICMP Time
 Exceeded](https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol#Time_exceeded)
-message back, notifying the sender that it is not forwarding the packet
-onwards.  If the hop limit is greater than zero, the router subtracts one from
-the hop limit and forwards it on to where the router believes the packet needs
-to go.  This mechanism exists to identify loops in router's routing tables.
+message back, notifying the sender that the router is not forwarding the packet
+onwards. If the hop limit is greater than zero, the router subtracts one from
+the hop limit and forwards the packet to where the router believes the packet needs
+to go to reach its final destination. This mechanism exists to identify loops
+in router's routing tables.
 
 Traceroute takes these Time Exceeded messages and then displays the IP address
 of the router that sent them. By starting at a hop limit of one, traceroute can
-show every server on the way (that sends back a Time Exceeded message). It
-can then do a reverse DNS lookup to display the hostname of the machine sending the
+show every router on the way to a packets final destination
+(some routers may decline to send a Time Exceeded message). Traceroute
+can then do a reverse DNS lookup to display the hostname of the router sending the
 Time Exceeded message, rather than just the IP address.
 
 `scuttle6` works by pretending to be a router. When `scuttle6` receives an ICMP
-packet (see Limitations below) it matches the packet's hop limit to an IP that
-was provided to it. It then sends back a Time Exceeded message to `traceroute6`
-_but_ spoofs the source IP address in the returning packet to the IP address
-that was provided to it.
+packet (see Limitations below) `scuttle6` matches the packet's hop limit to an IP that
+was provided to it. `scuttle6` then sends back a Time Exceeded message to `traceroute6`
+_but_ spoofs the source IP address in the returning Time Exceeded message.
 
-`traceroute6` will get the spoofed IP and believe the packet flowed through the
-spoofed IP before getting to its destination. It will then perform a reverse
-DNS lookup for the spoofed IP allowing you to render whatever hostname you
-would like.
+`traceroute6` will get the Time Exceeded message with the spoofed source IP and
+believe the packet flowed through the spoofed IP before getting to its final destination.
+`traceroute6` will then perform a reverse DNS lookup for the spoofed IP allowing you to
+render whatever hostname you would like.
 
 In short you provide `scuttle6` with a list of IP addresses who's reverse DNS
 records can match up to whatever arbitrary domain name you would like.
 `scuttle6` returns a different, spoofed, IP address depending on the hop limit
-it gets from `traceroute`.
+it gets from `traceroute6`. `traceroute6` resolves those IP addresses to arbitrary
+DNS records you control.
 
 ## Setup your own server
 
@@ -136,6 +138,11 @@ To build it from scratch you'll need the Rust toolchain and Rust stable. From
 there it's a:
 
     $ cargo build --release
+
+You will also need the `libpcap` headers installed. Refer to the instructions in the
+[rust pcap library](https://github.com/ebfull/pcap#building). On Debian systems:
+
+    $ apt-get install libpcap-dev
 
 ## Limitations
 
