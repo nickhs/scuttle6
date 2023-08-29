@@ -66,7 +66,7 @@ DNS records you control.
 ### What you will need to have
 
 * You will need to find a host that supports:
-    * IPv6 and gives you plenty of IPv6 addresses
+    * IPv6 capable provider gives you plenty of IPv6 addresses
     * modifying iptables rules to block the servers usual ICMP responses
     * `CAP_NET_RAW` to allow crafting and returning raw packets
 
