@@ -30,28 +30,28 @@ until the packet reaches its destination (or gives up). Each line in the
 traceroute output represents a packet with an increasing hop limit.
 
 When a router receives a packet, it checks what the hop limit is set to on the
-packet. If the hop limit is zero the router returns an [ICMP Time
-Exceeded](https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol#Time_exceeded)
+packet. If the hop limit is zero the router returns an [`ICMP Time
+Exceeded`](https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol#Time_exceeded)
 message back, notifying the sender that the router is not forwarding the packet
 onwards. If the hop limit is greater than zero, the router subtracts one from
 the hop limit and forwards the packet to where the router believes the packet needs
 to go to reach its final destination. This mechanism exists to identify loops
 in router's routing tables.
 
-Traceroute takes these Time Exceeded messages and then displays the IP address
+Traceroute takes these `Time Exceeded` messages and then displays the IP address
 of the router that sent them. By starting at a hop limit of one, traceroute can
 show every router on the way to a packets final destination
-(some routers may decline to send a Time Exceeded message). Traceroute
+(some routers may decline to send a `Time Exceeded` message). Traceroute
 can then do a reverse DNS lookup to display the hostname of the router sending the
-Time Exceeded message, rather than just the IP address.
+`Time Exceeded` message, rather than just the IP address.
 
 `scuttle6` works by pretending to be a router. When `scuttle6` receives an ICMP
-packet (see Limitations below) `scuttle6` matches the packet's hop limit to an IP that
-was provided to it. `scuttle6` then sends back a Time Exceeded message to `traceroute6`
-_but_ spoofs the source IP address in the returning Time Exceeded message.
+packet (see [Limitations](#limitations) below) `scuttle6` matches the packet's hop limit to an IP that
+was provided to it. `scuttle6` then sends back a `Time Exceeded` message to `traceroute6`
+_but_ spoofs the source IP address.
 
-`traceroute6` will get the Time Exceeded message with the spoofed source IP and
-believe the packet flowed through the spoofed IP before getting to its final destination.
+`traceroute6` will get the `Time Exceeded` message with the spoofed source IP and
+believe the packet flowed through the spoofed IP/router before getting to its final destination.
 `traceroute6` will then perform a reverse DNS lookup for the spoofed IP allowing you to
 render whatever hostname you would like.
 
